@@ -1,0 +1,180 @@
+1. Dockerization
+Steps:
+1. Clone the [Wisecow App](https://github.com/nyrahul/wisecow) repository locally.
+2. Create a `Dockerfile` for the application. Here's a sample:
+
+dockerfile
+# Use the base image
+FROM python:3.9-slim
+
+# Set working directory
+WORKDIR /app
+
+# Copy the application files
+COPY . .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose the port the app runs on
+EXPOSE 5000
+
+# Command to run the app
+CMD ["python", "app.py"]
+
+
+3. Build the Docker image locally and test it:
+   bash
+   docker build -t wisecow-app .
+   docker run -p 5000:5000 wisecow-app
+ 
+
+4. Push the Docker image to a container registry (e.g., Docker Hub or GitHub Container Registry).
+
+
+2. Kubernetes Deployment
+Steps:
+1. Create Kubernetes manifest files in a `k8s` directory:
+   - Deployment (deployment.yaml):
+     yaml
+     apiVersion: apps/v1
+     kind: Deployment
+     metadata:
+       name: wisecow-deployment
+     spec:
+       replicas: 2
+       selector:
+         matchLabels:
+           app: wisecow
+       template:
+         metadata:
+           labels:
+             app: wisecow
+         spec:
+           containers:
+           - name: wisecow
+             image: <container_registry>/wisecow-app:latest
+             ports:
+             - containerPort: 5000
+     
+   - Service (`service.yaml`):
+     yaml
+     apiVersion: v1
+     kind: Service
+     metadata:
+       name: wisecow-service
+     spec:
+       selector:
+         app: wisecow
+       ports:
+       - protocol: TCP
+         port: 80
+         targetPort: 5000
+       type: LoadBalancer
+     
+
+2. Deploy the application:
+   bash
+   kubectl apply -f k8s/deployment.yaml
+   kubectl apply -f k8s/service.yaml
+   
+
+---
+
+3. Continuous Integration and Deployment (CI/CD)
+**Steps:**
+1. Add a `.github/workflows/deploy.yaml` GitHub Actions workflow:
+
+   ```yaml
+   name: CI/CD Pipeline
+
+   on:
+     push:
+       branches:
+         - main
+
+   jobs:
+     build:
+       runs-on: ubuntu-latest
+       steps:
+       - name: Checkout code
+         uses: actions/checkout@v3
+
+       - name: Set up Docker
+         uses: docker/setup-buildx-action@v2
+
+       - name: Log in to DockerHub
+         uses: docker/login-action@v2
+         with:
+           username: ${{ secrets.DOCKER_USERNAME }}
+           password: ${{ secrets.DOCKER_PASSWORD }}
+
+       - name: Build and push Docker image
+         run: |
+           docker build -t <container_registry>/wisecow-app:latest .
+           docker push <container_registry>/wisecow-app:latest
+
+     deploy:
+       runs-on: ubuntu-latest
+       needs: build
+       steps:
+       - name: Setup kubectl
+         uses: azure/setup-kubectl@v3
+         with:
+           version: 'latest'
+
+       - name: Deploy to Kubernetes
+         run: |
+           kubectl apply -f k8s/deployment.yaml
+           kubectl apply -f k8s/service.yaml
+   ```
+
+2. Add secrets to your GitHub repository:
+   - `DOCKER_USERNAME` and `DOCKER_PASSWORD` for Docker login.
+   - Kubernetes cluster authentication credentials (if required for deployment).
+
+---
+
+### **4. TLS Implementation**
+**Steps:**
+1. Generate a TLS certificate and key. Use tools like `openssl` or a service like Let's Encrypt.
+2. Create a Kubernetes Secret for the certificate:
+   ```bash
+   kubectl create secret tls wisecow-tls --cert=path/to/cert.crt --key=path/to/key.key
+   ```
+3. Update the service to use HTTPS:
+   - Add an `Ingress` resource:
+     ```yaml
+     apiVersion: networking.k8s.io/v1
+     kind: Ingress
+     metadata:
+       name: wisecow-ingress
+       annotations:
+         nginx.ingress.kubernetes.io/ssl-redirect: "true"
+     spec:
+       tls:
+       - hosts:
+         - wisecow.example.com
+         secretName: wisecow-tls
+       rules:
+       - host: wisecow.example.com
+         http:
+           paths:
+           - path: /
+             pathType: Prefix
+             backend:
+               service:
+                 name: wisecow-service
+                 port:
+                   number: 80
+     ```
+
+4. Apply the `Ingress` resource:
+   ```bash
+   kubectl apply -f k8s/ingress.yaml
+   ```
+
+Verification
+1. Access the application via the Kubernetes service (load balancer or ingress).
+2. Confirm that HTTPS is working with the provided certificate.
+3. Ensure the GitHub Actions workflow automates the build, push, and deploy process.
